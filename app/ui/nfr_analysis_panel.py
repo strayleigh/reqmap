@@ -8,8 +8,10 @@ from typing import Optional, List, Dict, Any
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QScrollArea, QFrame, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QComboBox, QDialog, QFormLayout, QTextEdit
+    QHeaderView, QMessageBox, QComboBox, QDialog, QFormLayout, QTextEdit,
+    QAbstractItemView
 )
+from PySide6.QtGui import QUndoStack
 from PySide6.QtCore import Qt, Signal
 from app.models.requirement import Requirement
 from app.models.mapping import RequirementMapping
@@ -20,6 +22,7 @@ from app.services.catalog_service import QualityCatalogService
 from app.services.target_service import MetricTargetService
 from app.ui.widgets.status_badge import StatusBadge, create_badge_cell
 from app.ui.target_dialog import MetricTargetDialog
+from app.core.undo_manager import LambdaUndoCommand
 
 
 class ManualMappingDialog(QDialog):
@@ -113,12 +116,14 @@ class NFRAnalysisPanel(QWidget):
         mapping_engine: MappingEngine,
         catalog_service: QualityCatalogService,
         target_service: MetricTargetService,
+        undo_stack: Optional[QUndoStack] = None,
         parent=None
     ):
         super().__init__(parent)
         self.mapping_engine = mapping_engine
         self.catalog_service = catalog_service
         self.target_service = target_service
+        self.undo_stack = undo_stack
         self.current_req: Optional[Requirement] = None
 
         self.init_ui()
@@ -236,7 +241,9 @@ class NFRAnalysisPanel(QWidget):
         self.targets_table.setHorizontalHeaderLabels([
             "ISO Metric", "Operator", "Target Value", "Data Status", "Actions"
         ])
-        self.targets_table.verticalHeader().setDefaultSectionSize(40)
+        self.targets_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.targets_table.setWordWrap(True)
+        self.targets_table.verticalHeader().setDefaultSectionSize(44)
         self.targets_table.verticalHeader().setMinimumSectionSize(36)
 
         tgt_hdr = self.targets_table.horizontalHeader()
@@ -263,22 +270,24 @@ class NFRAnalysisPanel(QWidget):
         self.trace_table.setHorizontalHeaderLabels([
             "Characteristic", "Subcharacteristic", "Metric", "Status", "Rationale / Source"
         ])
-        self.trace_table.verticalHeader().setDefaultSectionSize(40)
+        self.trace_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.trace_table.setWordWrap(True)
+        self.trace_table.verticalHeader().setDefaultSectionSize(48)
         self.trace_table.verticalHeader().setMinimumSectionSize(36)
         self.trace_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         trace_hdr = self.trace_table.horizontalHeader()
         trace_hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        trace_hdr.resizeSection(0, 110)
+        trace_hdr.resizeSection(0, 150)
         trace_hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        trace_hdr.resizeSection(1, 130)
+        trace_hdr.resizeSection(1, 170)
         trace_hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        trace_hdr.resizeSection(2, 140)
+        trace_hdr.resizeSection(2, 260)
         trace_hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         trace_hdr.resizeSection(3, 95)
         trace_hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        trace_hdr.resizeSection(4, 200)
-        trace_hdr.setStretchLastSection(True)
+        trace_hdr.resizeSection(4, 250)
+        trace_hdr.setStretchLastSection(False)
         trace_layout.addWidget(self.trace_table)
 
         self.tabs.addTab(self.trace_tab, "Traceability Matrix")
@@ -519,6 +528,7 @@ class NFRAnalysisPanel(QWidget):
                         m_txt = QLabel(f"• {qm['measure_id']} - {qm['name']} ({qm['unit'] or '-'})")
                         m_txt.setObjectName("measureItemLabel")
                         m_txt.setWordWrap(True)
+                        m_txt.setToolTip(qm['name'])
                         m_row.addWidget(m_txt, stretch=1)
 
                         btn_cfg_target = QPushButton("+ Set Target")
@@ -545,6 +555,7 @@ class NFRAnalysisPanel(QWidget):
                         m_txt = QLabel(f"• {m.measure_id_code} - {m.measure_name}{unit_str}")
                         m_txt.setObjectName("measureItemLabel")
                         m_txt.setWordWrap(True)
+                        m_txt.setToolTip(m.measure_name)
                         m_row.addWidget(m_txt, stretch=1)
 
                         btn_cfg_target = QPushButton("+ Set Target")
@@ -679,29 +690,94 @@ class NFRAnalysisPanel(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
+            req_id = self.current_req.id
+            fc_id = s["fr_characteristic_id"]
+            qc_id = s["quality_characteristic_id"]
+            qsc_id = s.get("subcharacteristic_id")
+            rule_id = s.get("rule_id")
+            measure_ids = [m["id"] for m in s.get("available_measures", [])]
+            rational_note = f"Accepted from mapping rule recommendation: {s['fr_characteristic_name']}."
+
             self.mapping_engine.delete_rule_mapping(
-                req_id=self.current_req.id,
-                fc_id=s["fr_characteristic_id"],
-                qc_id=s["quality_characteristic_id"]
+                req_id=req_id,
+                fc_id=fc_id,
+                qc_id=qc_id
             )
             self.refresh_analysis()
             self.mapping_changed.emit()
 
+            if self.undo_stack:
+                def undo_delete():
+                    self.mapping_engine.apply_rule_suggestion(
+                        req_id=req_id,
+                        fc_id=fc_id,
+                        qc_id=qc_id,
+                        qsc_id=qsc_id,
+                        rule_id=rule_id,
+                        measure_ids=measure_ids,
+                        rational_note=rational_note
+                    )
+                    self.refresh_analysis()
+                    self.mapping_changed.emit()
+
+                def redo_delete():
+                    self.mapping_engine.delete_rule_mapping(
+                        req_id=req_id,
+                        fc_id=fc_id,
+                        qc_id=qc_id
+                    )
+                    self.refresh_analysis()
+                    self.mapping_changed.emit()
+
+                self.undo_stack.push(LambdaUndoCommand(undo_delete, redo_delete, f"Delete rule mapping '{s['fr_characteristic_name']}'"))
+
     def on_create_mapping_from_suggestion(self, s: Dict[str, Any]):
         if not self.current_req:
             return
+        req_id = self.current_req.id
+        fc_id = s["fr_characteristic_id"]
+        qc_id = s["quality_characteristic_id"]
+        qsc_id = s.get("subcharacteristic_id")
+        rule_id = s.get("rule_id")
         measure_ids = [m["id"] for m in s.get("available_measures", [])]
+        rational_note = f"Accepted from mapping rule recommendation: {s['fr_characteristic_name']}."
+
         self.mapping_engine.apply_rule_suggestion(
-            req_id=self.current_req.id,
-            fc_id=s["fr_characteristic_id"],
-            qc_id=s["quality_characteristic_id"],
-            qsc_id=s.get("subcharacteristic_id"),
-            rule_id=s.get("rule_id"),
+            req_id=req_id,
+            fc_id=fc_id,
+            qc_id=qc_id,
+            qsc_id=qsc_id,
+            rule_id=rule_id,
             measure_ids=measure_ids,
-            rational_note=f"Accepted from mapping rule recommendation: {s['fr_characteristic_name']}."
+            rational_note=rational_note
         )
         self.refresh_analysis()
         self.mapping_changed.emit()
+
+        if self.undo_stack:
+            def undo_apply():
+                self.mapping_engine.delete_rule_mapping(
+                    req_id=req_id,
+                    fc_id=fc_id,
+                    qc_id=qc_id
+                )
+                self.refresh_analysis()
+                self.mapping_changed.emit()
+
+            def redo_apply():
+                self.mapping_engine.apply_rule_suggestion(
+                    req_id=req_id,
+                    fc_id=fc_id,
+                    qc_id=qc_id,
+                    qsc_id=qsc_id,
+                    rule_id=rule_id,
+                    measure_ids=measure_ids,
+                    rational_note=rational_note
+                )
+                self.refresh_analysis()
+                self.mapping_changed.emit()
+
+            self.undo_stack.push(LambdaUndoCommand(undo_apply, redo_apply, f"Apply rule '{s['fr_characteristic_name']}'"))
 
     def on_confirm_mapping(self, mapping_id: int):
         self.mapping_engine.confirm_mapping(mapping_id)
@@ -831,17 +907,26 @@ class NFRAnalysisPanel(QWidget):
 
         self.targets_table.setRowCount(len(targets))
 
+        read_only_flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         for row, t in enumerate(targets):
-            m_item = QTableWidgetItem(f"{t.measure_id_code} - {t.measure_name}")
+            metric_desc = f"{t.measure_id_code} - {t.measure_name}"
+            m_item = QTableWidgetItem(metric_desc)
             m_item.setData(Qt.ItemDataRole.UserRole, t.quality_measure_id)
+            m_item.setFlags(read_only_flags)
+            m_item.setToolTip(metric_desc)
             self.targets_table.setItem(row, 0, m_item)
 
             op_item = QTableWidgetItem(t.operator)
             op_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            op_item.setFlags(read_only_flags)
+            op_item.setToolTip(f"Operator: {t.operator}")
             self.targets_table.setItem(row, 1, op_item)
 
-            val_item = QTableWidgetItem(f"{t.target_value} {t.target_unit or ''}".strip())
+            val_str = f"{t.target_value} {t.target_unit or ''}".strip()
+            val_item = QTableWidgetItem(val_str)
             val_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_item.setFlags(read_only_flags)
+            val_item.setToolTip(f"Target Value: {val_str}")
             self.targets_table.setItem(row, 2, val_item)
 
             badge_widget = create_badge_cell("Simulation", "dummy")
@@ -883,18 +968,58 @@ class NFRAnalysisPanel(QWidget):
         mappings = self.mapping_engine.get_mappings_for_requirement(self.current_req.id)
         self.trace_table.setRowCount(len(mappings))
 
+        read_only_flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         for row, m in enumerate(mappings):
-            self.trace_table.setItem(row, 0, QTableWidgetItem(m.qc_name or "-"))
-            self.trace_table.setItem(row, 1, QTableWidgetItem(m.qsc_name or "-"))
-            self.trace_table.setItem(row, 2, QTableWidgetItem(f"{m.measure_id_code}: {m.measure_name}" if m.measure_name else "-"))
+            item_qc = QTableWidgetItem(m.qc_name or "-")
+            item_qc.setFlags(read_only_flags)
+            item_qc.setToolTip(m.qc_name or "")
+            self.trace_table.setItem(row, 0, item_qc)
+
+            item_qsc = QTableWidgetItem(m.qsc_name or "-")
+            item_qsc.setFlags(read_only_flags)
+            item_qsc.setToolTip(m.qsc_name or "")
+            self.trace_table.setItem(row, 1, item_qsc)
+
+            metric_str = f"{m.measure_id_code}: {m.measure_name}" if m.measure_name else "-"
+            item_m = QTableWidgetItem(metric_str)
+            item_m.setFlags(read_only_flags)
+            item_m.setToolTip(m.measure_name if m.measure_name else metric_str)
+            self.trace_table.setItem(row, 2, item_m)
 
             badge_widget = create_badge_cell(m.status, "mapping")
             self.trace_table.setCellWidget(row, 3, badge_widget)
 
-            self.trace_table.setItem(row, 4, QTableWidgetItem(m.rational_note or m.rule_source or "-"))
+            rat_str = m.rational_note or m.rule_source or "-"
+            item_rat = QTableWidgetItem(rat_str)
+            item_rat.setFlags(read_only_flags)
+            item_rat.setToolTip(rat_str)
+            self.trace_table.setItem(row, 4, item_rat)
 
-        self.trace_table.setColumnWidth(4, 200)
-        self.trace_table.setColumnWidth(3, 95)
-        self.trace_table.setColumnWidth(2, 140)
-        self.trace_table.setColumnWidth(1, 130)
-        self.trace_table.setColumnWidth(0, 110)
+        self.adjust_trace_table_columns()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_trace_table_columns()
+
+    def adjust_trace_table_columns(self):
+        w = self.trace_table.viewport().width()
+        base = [150, 170, 260, 95, 250]
+        total_base = sum(base)
+        if w > total_base:
+            extra = w - total_base
+            w0 = base[0] + int(extra * 0.10)
+            w1 = base[1] + int(extra * 0.15)
+            w2 = base[2] + int(extra * 0.40)
+            w3 = base[3]
+            w4 = w - (w0 + w1 + w2 + w3)
+            self.trace_table.setColumnWidth(0, w0)
+            self.trace_table.setColumnWidth(1, w1)
+            self.trace_table.setColumnWidth(2, w2)
+            self.trace_table.setColumnWidth(3, w3)
+            self.trace_table.setColumnWidth(4, w4)
+        else:
+            self.trace_table.setColumnWidth(0, base[0])
+            self.trace_table.setColumnWidth(1, base[1])
+            self.trace_table.setColumnWidth(2, base[2])
+            self.trace_table.setColumnWidth(3, base[3])
+            self.trace_table.setColumnWidth(4, base[4])

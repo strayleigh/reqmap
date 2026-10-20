@@ -5,7 +5,7 @@ Clean, professional presentation without emoji clutter.
 """
 from typing import Optional, Dict, Any
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTreeWidget, QTreeWidgetItem, QLabel
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTreeWidget, QTreeWidgetItem, QLabel, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 from app.models.project import Project
@@ -33,6 +33,8 @@ class ProjectExplorerWidget(QWidget):
         header_row.setContentsMargins(0, 0, 0, 0)
         self.header_title = QLabel("Project Structure")
         self.header_title.setObjectName("explorerHeaderTitle")
+        self.header_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(160)
         header_row.addWidget(self.header_title)
         header_row.addStretch()
 
@@ -56,9 +58,11 @@ class ProjectExplorerWidget(QWidget):
 
         if not project:
             self.header_title.setText("No active project")
+            self.header_title.setToolTip("")
             return
 
         self.header_title.setText(project.name)
+        self.header_title.setToolTip(project.name)
 
         stats = stats or {"fr_count": 0, "nfr_count": 0, "confirmed_mappings": 0, "suggested_mappings": 0}
 

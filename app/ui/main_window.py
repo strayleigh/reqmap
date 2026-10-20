@@ -16,9 +16,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QAction, QKeySequence, QIcon, QPixmap, QPainter, QColor, QPen, QBrush,
-    QPainterPath, QFont
+    QPainterPath, QFont, QUndoStack
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QSize
+
+from app.core.undo_manager import LambdaUndoCommand
 
 from app.database.db import Database
 from app.models.project import Project
@@ -51,9 +53,10 @@ class MainWindow(QMainWindow):
 
         self.current_project: Optional[Project] = None
         self.is_dark_theme = False
+        self.undo_stack = QUndoStack(self)
 
         self.setWindowTitle("ReqMap - Desktop Requirements Engineering (ISO/IEC 25023)")
-        self.resize(1366, 768)
+        self.resize(1400, 800)
         self.setMinimumSize(1024, 600)
 
         self.init_ui()
@@ -90,22 +93,23 @@ class MainWindow(QMainWindow):
         self.nfr_panel = NFRAnalysisPanel(
             mapping_engine=self.mapping_engine,
             catalog_service=self.catalog_service,
-            target_service=self.target_service
+            target_service=self.target_service,
+            undo_stack=self.undo_stack
         )
         self.nfr_panel.mapping_changed.connect(self.on_mapping_changed)
         self.nfr_panel.edit_requirement_requested.connect(self.on_edit_requirement)
         self.main_splitter.addWidget(self.nfr_panel)
 
         self.saved_left_width = 220
-        self.saved_right_width = 460
+        self.saved_right_width = 540
         self.explorer.close_requested.connect(lambda: self.toggle_left_panel(False))
         self.nfr_panel.close_requested.connect(lambda: self.toggle_right_panel(False))
 
-        # Proportions: Explorer (220px), Table (600px), Right Panel (460px)
-        self.main_splitter.setSizes([220, 600, 460])
+        # Proportions: Explorer (220px), Table (580px), Right Panel (540px)
+        self.main_splitter.setSizes([220, 580, 540])
         self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
-        self.main_splitter.setStretchFactor(2, 0)
+        self.main_splitter.setStretchFactor(2, 1)
         central_layout.addWidget(self.main_splitter)
         self.setCentralWidget(central_widget)
 
@@ -143,6 +147,19 @@ class MainWindow(QMainWindow):
         act_exit.setShortcut(QKeySequence.StandardKey.Quit)
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
+
+        # Edit Menu
+        edit_menu = menubar.addMenu("Edit")
+
+        self.act_undo = self.undo_stack.createUndoAction(self, "Undo")
+        self.act_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        self.act_undo.setToolTip("Undo (Ctrl+Z)")
+        edit_menu.addAction(self.act_undo)
+
+        self.act_redo = self.undo_stack.createRedoAction(self, "Redo")
+        self.act_redo.setShortcut(QKeySequence.StandardKey.Redo)
+        self.act_redo.setToolTip("Redo (Ctrl+Y)")
+        edit_menu.addAction(self.act_redo)
 
         # Requirements Menu
         req_menu = menubar.addMenu("Requirements")
@@ -402,10 +419,54 @@ class MainWindow(QMainWindow):
         p.end()
         return QIcon(pm)
 
+    def create_undo_icon(self, dark: bool = False) -> QIcon:
+        pm = QPixmap(20, 20)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        fg = QColor("#cbd5e1" if dark else "#475569")
+        pen = QPen(fg, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+
+        path = QPainterPath()
+        path.moveTo(15.0, 15.5)
+        path.cubicTo(15.0, 7.5, 6.0, 6.5, 4.0, 10.5)
+        p.drawPath(path)
+
+        p.drawLine(QPointF(4.0, 10.5), QPointF(3.0, 6.0))
+        p.drawLine(QPointF(4.0, 10.5), QPointF(8.5, 9.0))
+        p.end()
+        return QIcon(pm)
+
+    def create_redo_icon(self, dark: bool = False) -> QIcon:
+        pm = QPixmap(20, 20)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        fg = QColor("#cbd5e1" if dark else "#475569")
+        pen = QPen(fg, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+
+        path = QPainterPath()
+        path.moveTo(5.0, 15.5)
+        path.cubicTo(5.0, 7.5, 14.0, 6.5, 16.0, 10.5)
+        p.drawPath(path)
+
+        p.drawLine(QPointF(16.0, 10.5), QPointF(17.0, 6.0))
+        p.drawLine(QPointF(16.0, 10.5), QPointF(11.5, 9.0))
+        p.end()
+        return QIcon(pm)
+
     def update_toolbar_icons(self):
         dark = self.is_dark_theme
         if hasattr(self, "act_toggle_left"):
             self.act_toggle_left.setIcon(self.create_sidebar_icon(dark))
+        if hasattr(self, "act_toggle_right"):
+            self.act_toggle_right.setIcon(self.create_mapping_panel_icon(dark))
+        if hasattr(self, "act_undo"):
+            self.act_undo.setIcon(self.create_undo_icon(dark))
+        if hasattr(self, "act_redo"):
+            self.act_redo.setIcon(self.create_redo_icon(dark))
         if hasattr(self, "act_fr"):
             self.act_fr.setIcon(self.create_add_fr_icon(dark))
         if hasattr(self, "act_nfr"):
@@ -414,8 +475,6 @@ class MainWindow(QMainWindow):
             self.act_edit.setIcon(self.create_edit_icon(dark))
         if hasattr(self, "act_del"):
             self.act_del.setIcon(self.create_delete_icon(dark))
-        if hasattr(self, "act_toggle_right"):
-            self.act_toggle_right.setIcon(self.create_mapping_panel_icon(dark))
 
     def create_tool_bar(self):
         toolbar = QToolBar("Actions")
@@ -428,6 +487,17 @@ class MainWindow(QMainWindow):
         self.act_toggle_left.setChecked(True)
         self.act_toggle_left.setToolTip("Sidebar")
         self.act_toggle_left.triggered.connect(self.toggle_left_panel)
+
+        self.act_toggle_right = toolbar.addAction("")
+        self.act_toggle_right.setCheckable(True)
+        self.act_toggle_right.setChecked(True)
+        self.act_toggle_right.setToolTip("Mapping Panel")
+        self.act_toggle_right.triggered.connect(self.toggle_right_panel)
+
+        toolbar.addSeparator()
+
+        toolbar.addAction(self.act_undo)
+        toolbar.addAction(self.act_redo)
 
         toolbar.addSeparator()
 
@@ -448,14 +518,6 @@ class MainWindow(QMainWindow):
         self.act_del = toolbar.addAction("")
         self.act_del.setToolTip("Delete Requirement")
         self.act_del.triggered.connect(lambda: self.on_delete_requirement(self.req_table_view.get_selected_requirement()))
-
-        toolbar.addSeparator()
-
-        self.act_toggle_right = toolbar.addAction("")
-        self.act_toggle_right.setCheckable(True)
-        self.act_toggle_right.setChecked(True)
-        self.act_toggle_right.setToolTip("Mapping Panel")
-        self.act_toggle_right.triggered.connect(self.toggle_right_panel)
 
         self.update_toolbar_icons()
 
@@ -500,8 +562,27 @@ class MainWindow(QMainWindow):
             new_req = dlg.get_data()
             new_req.project_id = self.current_project.id
             char_ids = dlg.get_selected_char_ids()
-            self.requirement_service.create_requirement(new_req, char_ids)
+            created_req = self.requirement_service.create_requirement(new_req, char_ids)
             self.refresh_all_views()
+            if created_req:
+                req_id = created_req.id
+                def undo_create():
+                    self.requirement_service.delete_requirement(req_id)
+                    self.refresh_all_views()
+                def redo_create():
+                    conn = self.db.get_connection()
+                    with conn:
+                        conn.execute(
+                            """
+                            INSERT INTO requirements (id, project_id, req_code, type, title, description, priority, status, mapping_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (created_req.id, created_req.project_id, created_req.req_code, created_req.type, created_req.title, created_req.description, created_req.priority, created_req.status, created_req.mapping_status)
+                        )
+                    self.requirement_service.set_requirement_fr_characteristics(req_id, char_ids)
+                    self.refresh_all_views()
+                    self.req_table_view.select_requirement_by_id(req_id)
+                self.undo_stack.push(LambdaUndoCommand(undo_create, redo_create, f"Add {created_req.req_code}"))
 
     def on_edit_requirement(self, req: Optional[Requirement]):
         if not req or not self.current_project:
@@ -514,6 +595,21 @@ class MainWindow(QMainWindow):
             parent=self
         )
         if dlg.exec():
+            old_req_data = Requirement(
+                id=req.id,
+                project_id=req.project_id,
+                req_code=req.req_code,
+                type=req.type,
+                title=req.title,
+                description=req.description,
+                priority=req.priority,
+                status=req.status,
+                mapping_status=req.mapping_status,
+                created_at=req.created_at,
+                updated_at=req.updated_at
+            )
+            old_char_ids = [c.id for c in (req.fr_characteristics or [])]
+
             updated = dlg.get_data()
             char_ids = dlg.get_selected_char_ids()
             self.requirement_service.update_requirement(updated, char_ids)
@@ -522,6 +618,24 @@ class MainWindow(QMainWindow):
             if fresh_req:
                 self.req_table_view.select_requirement_by_id(fresh_req.id)
                 self.nfr_panel.set_requirement(fresh_req)
+
+            def undo_edit():
+                self.requirement_service.update_requirement(old_req_data, old_char_ids)
+                self.refresh_all_views()
+                r = self.requirement_service.get_requirement_by_id(old_req_data.id)
+                if r:
+                    self.req_table_view.select_requirement_by_id(r.id)
+                    self.nfr_panel.set_requirement(r)
+
+            def redo_edit():
+                self.requirement_service.update_requirement(updated, char_ids)
+                self.refresh_all_views()
+                r = self.requirement_service.get_requirement_by_id(updated.id)
+                if r:
+                    self.req_table_view.select_requirement_by_id(r.id)
+                    self.nfr_panel.set_requirement(r)
+
+            self.undo_stack.push(LambdaUndoCommand(undo_edit, redo_edit, f"Edit {req.req_code}"))
 
     def on_delete_requirement(self, req: Optional[Requirement]):
         if not req:
@@ -533,8 +647,64 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm == QMessageBox.StandardButton.Yes:
+            req_data = Requirement(
+                id=req.id,
+                project_id=req.project_id,
+                req_code=req.req_code,
+                type=req.type,
+                title=req.title,
+                description=req.description,
+                priority=req.priority,
+                status=req.status,
+                mapping_status=req.mapping_status,
+                created_at=req.created_at,
+                updated_at=req.updated_at
+            )
+            char_ids = [c.id for c in (req.fr_characteristics or [])]
+            existing_mappings = self.mapping_engine.get_mappings_for_requirement(req.id)
+            existing_targets = self.target_service.get_targets_for_requirement(req.id)
+
             self.requirement_service.delete_requirement(req.id)
             self.refresh_all_views()
+
+            def undo_delete():
+                conn = self.db.get_connection()
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO requirements (id, project_id, req_code, type, title, description, priority, status, mapping_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (req_data.id, req_data.project_id, req_data.req_code, req_data.type, req_data.title, req_data.description, req_data.priority, req_data.status, req_data.mapping_status)
+                    )
+                self.requirement_service.set_requirement_fr_characteristics(req_data.id, char_ids)
+                for m in existing_mappings:
+                    with conn:
+                        conn.execute(
+                            """
+                            INSERT INTO requirement_mappings (requirement_id, quality_characteristic_id, quality_subcharacteristic_id, quality_measure_id, fr_characteristic_id, mapping_rule_id, status, rational_note)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (req_data.id, m.quality_characteristic_id, m.quality_subcharacteristic_id, m.quality_measure_id, m.fr_characteristic_id, m.mapping_rule_id, m.status, m.rational_note)
+                        )
+                for t in existing_targets:
+                    self.target_service.set_target(
+                        req_id=req_data.id,
+                        quality_measure_id=t.quality_measure_id,
+                        operator=t.operator,
+                        target_value=t.target_value,
+                        target_unit=t.target_unit,
+                        rational_note=t.rational_note,
+                        is_dummy=t.is_dummy
+                    )
+                self.refresh_all_views()
+                self.req_table_view.select_requirement_by_id(req_data.id)
+
+            def redo_delete():
+                self.requirement_service.delete_requirement(req_data.id)
+                self.refresh_all_views()
+
+            self.undo_stack.push(LambdaUndoCommand(undo_delete, redo_delete, f"Delete {req.req_code}"))
 
     def on_mapping_changed(self):
         current_id = self.nfr_panel.current_req.id if self.nfr_panel.current_req else None
@@ -601,7 +771,7 @@ class MainWindow(QMainWindow):
             sizes = self.main_splitter.sizes()
             left_w = sizes[0] if len(sizes) > 0 else 220
             center_w = sizes[1] if len(sizes) > 1 else 500
-            right_w = max(self.saved_right_width, 380)
+            right_w = max(self.saved_right_width, 500)
             self.main_splitter.setSizes([left_w, center_w, right_w])
 
         self.act_toggle_right.setChecked(new_state)

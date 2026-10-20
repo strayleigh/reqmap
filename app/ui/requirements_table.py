@@ -64,10 +64,10 @@ class RequirementsTableView(QWidget):
         main_layout.addLayout(filter_bar)
 
         # Table Widget
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Type", "Requirement Title", "Description",
-            "Priority", "Status", "Mapping Status", "Mapping Characters"
+            "ID", "Type", "Requirement Title",
+            "Priority", "Mapping Status", "Mapping Characters"
         ])
 
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -75,28 +75,26 @@ class RequirementsTableView(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        self.table.setWordWrap(True)
 
-        # Generous row height (40px) to prevent vertical clipping of tags
+        # Generous row height (40px) to prevent vertical clipping of tags and allow multi-line title wrapping
         self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.verticalHeader().setMinimumSectionSize(36)
 
         # Column sizing with adequate minimum widths
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(0, 80)
+        header.resizeSection(0, 85)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(1, 75)
+        header.resizeSection(1, 60)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(2, 220)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.resizeSection(2, 300)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(3, 90)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(4, 100)
+        header.resizeSection(4, 125)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(5, 130)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(6, 150)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(7, 160)
+        header.resizeSection(5, 150)
 
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.doubleClicked.connect(self.on_double_clicked)
@@ -173,39 +171,58 @@ class RequirementsTableView(QWidget):
             title_item.setToolTip(r.title)
             self.table.setItem(row, 2, title_item)
 
-            # 3: Description
-            desc_item = QTableWidgetItem(r.description or "-")
-            desc_item.setToolTip(r.description or "")
-            self.table.setItem(row, 3, desc_item)
-
-            # 4: Priority Solid Badge
+            # 3: Priority Solid Badge
             p_badge = create_badge_cell(r.priority, "priority")
-            self.table.setCellWidget(row, 4, p_badge)
+            self.table.setCellWidget(row, 3, p_badge)
 
-            # 5: Engineering Status Solid Badge
-            s_badge = create_badge_cell(r.status, "status")
-            self.table.setCellWidget(row, 5, s_badge)
-
-            # 6: Mapping Status Solid Badge
+            # 4: Mapping Status Solid Badge
             m_badge = create_badge_cell(r.mapping_status, "mapping")
-            self.table.setCellWidget(row, 6, m_badge)
+            self.table.setCellWidget(row, 4, m_badge)
 
-            # 7: Mapping Characteristics summary
+            # 5: Mapping Characters summary
             char_codes = [fc.code for fc in r.fr_characteristics]
             chars_str = ", ".join(char_codes) if char_codes else "-"
             char_item = QTableWidgetItem(chars_str)
             char_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 7, char_item)
+            self.table.setItem(row, 5, char_item)
 
         self.table.setSortingEnabled(True)
         self.count_label.setText(
             f"Showing {len(self.displayed_requirements)} of {len(self.requirements)} requirements"
         )
+        self.adjust_title_column_width()
 
         if self.displayed_requirements:
             self.table.selectRow(0)
         else:
             self.requirement_selected.emit(None)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_title_column_width()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.adjust_title_column_width()
+
+    def adjust_title_column_width(self):
+        header = self.table.horizontalHeader()
+        if header.count() < 6:
+            return
+        other_widths = (
+            header.sectionSize(0) +
+            header.sectionSize(1) +
+            header.sectionSize(3) +
+            header.sectionSize(4) +
+            header.sectionSize(5)
+        )
+        viewport_w = self.table.viewport().width()
+        available = viewport_w - other_widths
+        if available > 300:
+            header.resizeSection(2, available)
+        else:
+            if header.sectionSize(2) < 300:
+                header.resizeSection(2, 300)
 
     def select_requirement_by_id(self, req_id: int):
         for row in range(self.table.rowCount()):
