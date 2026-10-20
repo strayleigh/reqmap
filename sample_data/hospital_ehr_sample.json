@@ -1,0 +1,126 @@
+{
+  "name": "Sistem Informasi Rekam Medis Elektronik (RME) RS Harapan Sehat",
+  "description": "Proyek percontohan implementasi sistem manajemen rekam medis digital rumah sakit yang mengintegrasikan pendaftaran pasien, pencatatan resep obat, dan interoperabilitas data kesehatan nasional (SatuSehat).",
+  "requirements": [
+    {
+      "req_code": "FR-001",
+      "type": "FR",
+      "title": "Autentikasi Pengguna dengan Kontrol Akses Berbasis Peran (RBAC)",
+      "description": "Dokter, perawat, dan staf rekam medis wajib login menggunakan NIP dan kata sandi dengan autentikasi multifaktor sebelum mengakses data pasien.",
+      "priority": "Kritis",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-1",
+        "FRC-6"
+      ]
+    },
+    {
+      "req_code": "FR-002",
+      "type": "FR",
+      "title": "Pencatatan Transaksi Resep Obat dan Pembaruan Stok Farmasi",
+      "description": "Sistem mencatat transaksi resep dokter, menghitung dosis obat, dan secara otomatis mengurangi stok inventaris apotek secara real-time.",
+      "priority": "Tinggi",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-2",
+        "FRC-5"
+      ]
+    },
+    {
+      "req_code": "FR-003",
+      "type": "FR",
+      "title": "Ekspor Data Resume Medis ke Format Standar FHIR SatuSehat",
+      "description": "Sistem menyediakan fungsi sinkronisasi dan transfer berkas resume medis pasien dalam format JSON HL7/FHIR ke platform Kementerian Kesehatan.",
+      "priority": "Tinggi",
+      "status": "Sedang Ditinjau",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-3",
+        "FRC-6"
+      ]
+    },
+    {
+      "req_code": "FR-004",
+      "type": "FR",
+      "title": "Pencarian Rekam Medis Pasien dengan Autocomplete dan Validasi Input",
+      "description": "Petugas pendaftaran dapat mencari rekam medis menggunakan NIK atau Nomor RM dengan saran otomatis dan pencegahan kesalahan input karakter.",
+      "priority": "Sedang",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-1",
+        "FRC-4"
+      ]
+    },
+    {
+      "req_code": "FR-005",
+      "type": "FR",
+      "title": "Mekanisme Pemulihan dan Retry Otomatis Koneksi Database",
+      "description": "Ketika koneksi database cluster mengalami gangguan sesaat, sistem mendeteksi galat dan melakukan reconnect otomatis hingga 3 kali tanpa crash.",
+      "priority": "Tinggi",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-5",
+        "FRC-7"
+      ]
+    },
+    {
+      "req_code": "FR-006",
+      "type": "FR",
+      "title": "Konfigurasi Portabel Multi-Platform Berbasis Berkas Konfigurasi",
+      "description": "Aplikasi dapat dijalankan di lingkungan Linux maupun Windows dengan membaca parameter koneksi database dan API melalui berkas konfigurasi .env.",
+      "priority": "Sedang",
+      "status": "Draf",
+      "mapping_status": "Disarankan",
+      "fr_characteristics": [
+        "FRC-8"
+      ]
+    },
+    {
+      "req_code": "FR-007",
+      "type": "FR",
+      "title": "Logging Transaksi Sensitif dan Audit Trail Perubahan Medis",
+      "description": "Setiap perubahan data diagnosis medis harus dicatat dalam audit trail terstruktur yang mencakup identitas aktor, waktu tepat, dan nilai sebelum-sesudah.",
+      "priority": "Kritis",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": [
+        "FRC-6",
+        "FRC-7"
+      ]
+    },
+    {
+      "req_code": "NFR-001",
+      "type": "NFR",
+      "title": "Waktu Respon Pemrosesan Kueri Resep Maksimal 300 Milidetik",
+      "description": "Operasi pencarian dan penyimpanan transaksi resep obat harus merespons dalam waktu rata-rata di bawah 300 ms pada beban normal.",
+      "priority": "Tinggi",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": []
+    },
+    {
+      "req_code": "NFR-002",
+      "type": "NFR",
+      "title": "Ketersediaan Sistem Rawat Inap Minimal 99.5% per Bulan",
+      "description": "Sistem pendaftaran dan pemantauan pasien rawat inap harus selalu aktif dengan downtime maksimal 3,6 jam per bulan.",
+      "priority": "Kritis",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": []
+    },
+    {
+      "req_code": "NFR-003",
+      "type": "NFR",
+      "title": "Enkripsi Data Pasien Menggunakan AES-256 dan TLS 1.3",
+      "description": "Semua data identitas pasien dan riwayat diagnosa harus dienkripsi saat disimpan di basis data dan saat dikirim melalui jaringan.",
+      "priority": "Kritis",
+      "status": "Disetujui",
+      "mapping_status": "Terkonfirmasi",
+      "fr_characteristics": []
+    }
+  ]
+}

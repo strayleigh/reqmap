@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reqmap"
+version = "1.0.0"
+description = "Desktop Requirements Engineering Application with ISO/IEC 25023 NFR Mapping"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5.0"
+]
+
+[project.scripts]
+reqmap = "app.main:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
